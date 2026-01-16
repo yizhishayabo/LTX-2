@@ -32,7 +32,7 @@ tmp
 *.heif
 *.jpg
 *.jpeg
-*.json
+ffmpeg.exe
 *.m4a
 *.mov
 *.mp4
