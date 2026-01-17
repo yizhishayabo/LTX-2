@@ -5,19 +5,19 @@ set -e # 遇到错误立即退出
 # 用户配置区
 # ==========================================
 # [必填] 请将下面的 ID 替换为你的 Google Drive 文件 ID (分享链接中 'd/' 和 '/view' 之间的部分)
-GDRIVE_ID="<YOUR_GDRIVE_FILE_ID>"
+GDRIVE_ID="1Ke3BTygkL4IOJXnG8GXs3ITK0nFp5WRz"
 
 # [可选] 数据集文件名和解压目录
-DATASET_ARCHIVE="dataset.zip"
-DATASET_DIR="dataset"
+DATASET_ARCHIVE="completefile.zip"
+DATASET_DIR="completefile"
 
 # [可选] 模型存放目录
 MODEL_DIR="models"
 
 # [可选] Hugging Face Repo ID
-LTX_MODEL_REPO="Lightricks/LTX-Video"
-LTX_MODEL_FILENAME="ltx-video-2b-v0.9.1.safetensors"
-TEXT_ENCODER_REPO="google/gemma-2b"
+LTX_MODEL_REPO="Lightricks/LTX-2"
+LTX_MODEL_FILENAME="ltx-2-19b-dev.safetensors"
+TEXT_ENCODER_REPO="google/gemma-3-12b-it-qat-q4_0-unquantized"
 
 # ==========================================
 
@@ -76,10 +76,17 @@ else
 fi
 
 # 下载 Gemma
-GEMMA_DIR="$MODEL_DIR/gemma-2b"
 if [ ! -d "$GEMMA_DIR" ]; then
     echo "下载 Gemma 文本编码器 ($TEXT_ENCODER_REPO)..."
-    #这需要同意 Gemma 的使用协议，并且在运行脚本前登录 (huggingface-cli login)
+    
+    # 检查是否已登录 Hugging Face (Gemma 模型需要权限)
+    if ! huggingface-cli whoami &> /dev/null; then
+        echo "❌ 错误：未检测到 Hugging Face 登录状态！"
+        echo "Gemma 模型属于受限资源，请先运行 'huggingface-cli login' 并输入您的 Access Token。"
+        echo "Token 获取地址: https://huggingface.co/settings/tokens"
+        exit 1
+    fi
+
     huggingface-cli download "$TEXT_ENCODER_REPO" --local-dir "$GEMMA_DIR" --local-dir-use-symlinks False
 else
     echo "Gemma 模型已存在。"
