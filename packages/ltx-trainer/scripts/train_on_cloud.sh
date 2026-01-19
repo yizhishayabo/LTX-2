@@ -5,7 +5,7 @@ set -e # 遇到错误立即退出
 # 用户配置区
 # ==========================================
 # [必填] 请将下面的 ID 替换为你的 Google Drive 文件 ID (分享链接中 'd/' 和 '/view' 之间的部分)
-GDRIVE_ID="1Ke3BTygkL4IOJXnG8GXs3ITK0nFp5WRz"
+GDRIVE_ID="1-KNTtbE_01KBzFiueswuTxvTTNERUsaG"
 
 # [可选] 数据集文件名和解压目录
 DATASET_ARCHIVE="completefile.zip"
