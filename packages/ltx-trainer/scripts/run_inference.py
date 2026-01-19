@@ -15,7 +15,8 @@ def run_inference(
     height: int = 512,
     width: int = 768,
     num_frames: int = 121,
-    seed: int = 42
+    seed: int = 42,
+    input_image: str = None
 ):
     """
     运行 LTX-2 模型的推理脚本
@@ -53,6 +54,17 @@ def run_inference(
         fp8transformer=True # 开启 FP8 以节省显存，显存足够可设为 False
     )
 
+    # 构造图片输入参数
+    # 格式: list[tuple[path, frame_idx, strength]]
+    # 我们默认放在第 0 帧，强度 1.0 (这是最标准的图生视频用法)
+    images_arg = []
+    if input_image:
+        if not os.path.exists(input_image):
+            print(f"❌ 错误：输入图片未找到: {input_image}")
+            return
+        print(f"🖼️  使用图片作为首帧输入: {input_image}")
+        images_arg = [(input_image, 0, 1.0)]
+
     # 3. 生成视频
     print(f"🎬 开始生成视频...")
     print(f"   - 提示词: {prompt}")
@@ -70,6 +82,7 @@ def run_inference(
         frame_rate=25.0,
         num_inference_steps=40, # 推理步数，越高越精细但越慢
         cfg_guidance_scale=3.0, # 提示词相关性，通常 3.0-4.0
+        images=images_arg  # <--- 传入图片参数
     )
     
     print(f"✅ 视频生成完成！已保存至: {output_path}")
@@ -87,6 +100,7 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, default="generated_video.mp4", help="输出视频文件名")
     parser.add_argument("--prompt", type=str, required=True, help="视频生成的提示词 (英文)")
     parser.add_argument("--negative-prompt", type=str, default="worst quality, blurry, jittery", help="负面提示词")
+    parser.add_argument("--input-image", type=str, default=None, help="[可选] 输入图片路径，用于图生视频 (Image-to-Video)")
     
     args = parser.parse_args()
     
@@ -105,5 +119,6 @@ if __name__ == "__main__":
         lora_path=args.lora,
         output_path=args.output,
         prompt=args.prompt,
-        negative_prompt=args.negative_prompt
+        negative_prompt=args.negative_prompt,
+        input_image=args.input_image
     )

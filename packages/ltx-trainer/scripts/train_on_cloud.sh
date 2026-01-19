@@ -68,7 +68,8 @@ fi
 
 # 安装 python 依赖工具
 echo "安装工具依赖 (gdown, huggingface_hub)..."
-pip install gdown huggingface_hub --upgrade --quiet
+# 强制重新安装 huggingface_hub 以解决版本冲突 (如 1.3.2 问题)
+pip install gdown huggingface_hub --upgrade --force-reinstall --quiet
 
 # 2. 下载数据集
 echo "📥 准备数据集..."
@@ -101,18 +102,47 @@ else
 fi
 
 # 下载 Gemma
-if [ ! -d "$GEMMA_DIR" ]; then
+# 检查目录是否存在且包含模型文件 (防止下载中断导致的空目录)
+if ! ls "$GEMMA_DIR"/model*.safetensors >/dev/null 2>&1; then
     echo "下载 Gemma 文本编码器 ($TEXT_ENCODER_REPO)..."
     
+    # 清理可能残留的空目录
+    if [ -d "$GEMMA_DIR" ]; then
+        echo "发现不完整的 Gemma 目录，正在清理..."
+        rm -rf "$GEMMA_DIR"
+    fi
+    
     # 检查是否已登录 Hugging Face (Gemma 模型需要权限)
-    if ! python3 -c "from huggingface_hub import HfFolder; exit(0 if HfFolder.get_token() else 1)"; then
+    if ! python3 -c "import huggingface_hub; exit(0 if huggingface_hub.get_token() else 1)"; then
         echo "❌ 错误：未检测到 Hugging Face 登录状态！"
-        echo "Gemma 模型属于受限资源，请先运行 'huggingface-cli login' 并输入您的 Access Token。"
+        echo "Gemma 模型属于受限资源，请输入您的 Access Token 进行登录。"
         echo "Token 获取地址: https://huggingface.co/settings/tokens"
+        echo ""
+        echo "🔍 请复制并运行以下命令进行登录:"
+        echo "python3 -c \"import huggingface_hub; huggingface_hub.login()\""
         exit 1
     fi
 
-    python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$TEXT_ENCODER_REPO', local_dir='$GEMMA_DIR', local_dir_use_symlinks=False)"
+    # 使用 python 脚本下载并处理异常
+    python3 -c "
+from huggingface_hub import snapshot_download
+from huggingface_hub.utils import HfHubHTTPError
+import sys
+
+try:
+    snapshot_download(repo_id='$TEXT_ENCODER_REPO', local_dir='$GEMMA_DIR', local_dir_use_symlinks=False)
+except HfHubHTTPError as e:
+    print(f'\n❌ 下载失败: {e}')
+    if '403' in str(e):
+        print('\n🛑 权限被拒绝 (403 Forbidden) 解决方案:')
+        print('1. 请确保您已在 Hugging Face 官网同意 Gemma-3 的使用协议: https://huggingface.co/google/gemma-3-12b-it')
+        print('2. 请检查您的 Access Token 权限 (Fine-grained tokens 需要开启 \'Gated repositories\' 读取权限)。')
+        print('3. 尝试重新生成一个 Token 并通过 python3 -c \"import huggingface_hub; huggingface_hub.login()\" 重新登录。')
+    sys.exit(1)
+except Exception as e:
+    print(f'\n❌ 未知错误: {e}')
+    sys.exit(1)
+"
 else
     echo "Gemma 模型已存在。"
 fi
@@ -140,7 +170,32 @@ uv run scripts/process_dataset.py "$DATASET_JSON" \
 
 # 5. 训练
 echo "🔥 开始训练..."
+
+# 5.1 动态更新配置文件 (替换占位符为真实路径)
+CONFIG_FILE="configs/ltx2_av_lora.yaml"
+PREPROCESSED_DIR="$(dirname "$DATASET_JSON")/.precomputed"
+
+echo "正在更新配置文件 $CONFIG_FILE..."
+echo "  - Model Path: $LTX_MODEL_PATH"
+echo "  - Text Encoder: $GEMMA_DIR"
+echo "  - Data Root: $PREPROCESSED_DIR"
+
+# 使用 absolute path 防止路径问题 (可选，但推荐)
+ABS_MODEL_PATH=$(readlink -f "$LTX_MODEL_PATH")
+ABS_GEMMA_DIR=$(readlink -f "$GEMMA_DIR")
+ABS_DATA_ROOT=$(readlink -f "$PREPROCESSED_DIR")
+
+# 使用 sed 替换 YAML 中的占位符
+# 注意：使用 | 作为分隔符，因为路径中包含 /
+sed -i "s|model_path: \"path/to/ltx-2-model.safetensors\"|model_path: \"$ABS_MODEL_PATH\"|g" "$CONFIG_FILE"
+sed -i "s|text_encoder_path: \"path/to/gemma-text-encoder\"|text_encoder_path: \"$ABS_GEMMA_DIR\"|g" "$CONFIG_FILE"
+sed -i "s|preprocessed_data_root: \"/path/to/preprocessed/data\"|preprocessed_data_root: \"$ABS_DATA_ROOT\"|g" "$CONFIG_FILE"
+
+# 禁用音频训练 (因为数据集仅包含视频/字幕，且预处理未生成音频潜变量)
+echo "正在自动禁用音频训练 (with_audio: false)..."
+sed -i "s|with_audio: true|with_audio: false|g" "$CONFIG_FILE"
+
 # 默认使用 LoRA 配置，如果需要全量微调请修改此处的配置文件路径
-uv run scripts/train.py configs/ltx2_av_lora.yaml
+uv run scripts/train.py "$CONFIG_FILE"
 
 echo "✅ 训练流程完成！输出文件位于 runs/ 目录。"
